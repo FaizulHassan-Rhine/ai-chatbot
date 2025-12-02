@@ -25,7 +25,7 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-300 ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-80  bg-card border-r transform transition-transform duration-300 ${
           isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
@@ -59,37 +59,47 @@ export default function Sidebar({
                 No chats yet. Start a new conversation!
               </div>
             ) : (
-              <div className="space-y-1 p-2">
-                {chats.map((chat) => (
-                  <div
-                    key={chat.id}
-                    className={`group flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors ${
-                      currentChatId === chat.id
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-accent"
-                    }`}
-                    onClick={() => onSelectChat(chat.id)}
-                  >
-                    <MessageSquare size={16} />
-                    <span className="flex-1 text-sm truncate">
-                      {chat.title}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        onDeleteChat(chat.id);
-                      }}
-                      title="Delete chat"
+              <div className="space-y-1 p-2 overflow-visible">
+                {chats.map((chat) => {
+                  const isSelected = currentChatId === chat.id;
+                  return (
+                    <div
+                      key={chat.id}
+                      className={`group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors min-w-0 ${
+                        isSelected
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-accent"
+                      }`}
+                      onClick={() => onSelectChat(chat.id)}
                     >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                ))}
+                      <MessageSquare size={16} className="shrink-0" />
+                      <span className="flex-1 text-sm truncate min-w-0">
+                        {chat.title}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={`h-7 w-7 shrink-0 rounded-md flex-shrink-0 ${
+                          isSelected
+                            ? "text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground"
+                            : "text-red-500 hover:bg-red-500/10 hover:text-red-600"
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          if (onDeleteChat) {
+                            onDeleteChat(chat.id);
+                          }
+                        }}
+                        title="Delete chat"
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </ScrollArea>

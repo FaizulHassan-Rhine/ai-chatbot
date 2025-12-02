@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { Send, Paperclip, Settings, Bot, Menu, X } from "lucide-react";
+import { Send, Paperclip, Settings, Bot, Menu, X, Download } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import Sidebar from "@/components/Sidebar";
 import ChatMessage from "@/components/ChatMessage";
@@ -18,6 +18,7 @@ import {
   getAllChats,
   getChatById,
   createChat,
+  updateChat,
   deleteChat,
   getMessagesByChatId,
   createMessage,
@@ -81,6 +82,15 @@ export default function ChatPage() {
     }
   };
 
+  // Helper function to extract first 4-5 words from text
+  const getChatTitleFromMessage = (text) => {
+    if (!text || !text.trim()) return "New Chat";
+    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+    const wordCount = Math.min(words.length, 5); // Get first 5 words or less
+    const title = words.slice(0, wordCount).join(" ");
+    return title || "New Chat";
+  };
+
   const createNewChat = async () => {
     try {
       const newChat = await createChat("New Chat");
@@ -93,8 +103,16 @@ export default function ChatPage() {
   };
 
   const deleteChatHandler = async (chatId) => {
+    if (!chatId) {
+      console.error("No chat ID provided for deletion");
+      return;
+    }
+    
     try {
+      console.log("Deleting chat:", chatId);
       await deleteChat(chatId);
+      console.log("Chat deleted successfully");
+      
       // Update UI optimistically
       const updatedChats = chats.filter((c) => c.id !== chatId);
       setChats(updatedChats);
@@ -107,7 +125,46 @@ export default function ChatPage() {
       }
     } catch (error) {
       console.error("Error deleting chat:", error);
-      alert("Failed to delete chat. Please try again.");
+      alert(`Failed to delete chat: ${error.message || "Unknown error"}`);
+    }
+  };
+
+  const downloadChat = () => {
+    if (!currentChatId || messages.length === 0) {
+      alert("No chat to download. Please select a chat with messages.");
+      return;
+    }
+
+    try {
+      // Get chat title
+      const currentChat = chats.find((c) => c.id === currentChatId);
+      const chatTitle = currentChat?.title || "Chat Conversation";
+      
+      // Format messages for export
+      const formattedMessages = messages
+        .map((msg, index) => {
+          const role = msg.role === "user" ? "User" : "Assistant";
+          const content = msg.content || "";
+          return `${role}:\n${content}\n`;
+        })
+        .join("\n---\n\n");
+
+      // Create file content
+      const fileContent = `Chat: ${chatTitle}\nDate: ${new Date().toLocaleString()}\n\n${"=".repeat(50)}\n\n${formattedMessages}`;
+
+      // Create and download file
+      const blob = new Blob([fileContent], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${chatTitle.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().split("T")[0]}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading chat:", error);
+      alert("Failed to download chat. Please try again.");
     }
   };
 
@@ -130,12 +187,31 @@ export default function ChatPage() {
     let chatId = currentChatId;
     if (!chatId) {
       try {
-        const newChat = await createChat(input.slice(0, 50) || "New Chat");
+        // Use first 4-5 words from the message as title
+        const chatTitle = getChatTitleFromMessage(input);
+        const newChat = await createChat(chatTitle);
         chatId = newChat.id;
         setCurrentChatId(chatId);
         setChats([newChat, ...chats]);
       } catch (error) {
         console.error("Error creating chat:", error);
+      }
+    } else {
+      // Update chat title if it's still "New Chat" and this is the first user message
+      try {
+        const currentChat = chats.find((c) => c.id === chatId);
+        if (currentChat && (currentChat.title === "New Chat" || !currentChat.title.trim())) {
+          const chatTitle = getChatTitleFromMessage(input);
+          if (chatTitle !== "New Chat") {
+            await updateChat(chatId, { title: chatTitle });
+            // Update the chat in the local state
+            setChats(chats.map((c) => 
+              c.id === chatId ? { ...c, title: chatTitle } : c
+            ));
+          }
+        }
+      } catch (error) {
+        console.error("Error updating chat title:", error);
       }
     }
 
@@ -318,6 +394,18 @@ export default function ChatPage() {
             </div>
 
             <div className="flex items-center gap-2 pr-16">
+              {currentChatId && messages.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={downloadChat}
+                  className="gap-2"
+                  title="Download chat"
+                >
+                  <Download size={16} />
+                  <span className="hidden sm:inline">Download</span>
+                </Button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2">
