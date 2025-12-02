@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getModelConfig } from "@/lib/ai-models";
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const fetchCache = 'force-no-store';
 
 // Simple RAG: Search knowledge base and add context
 async function getRAGContext(userMessage) {
   try {
+    // Dynamic import to avoid build-time issues
+    const { prisma } = await import('@/lib/prisma');
     // Simple text-based search (for production, use vector embeddings)
     const allKnowledge = await prisma.knowledge.findMany();
     const queryLower = userMessage.toLowerCase();
@@ -36,6 +38,9 @@ export async function POST(req) {
   try {
     const { messages, chatId, modelId = "gemini", useRAG = false } = await req.json();
     const modelConfig = getModelConfig(modelId);
+
+    // Dynamic import Prisma to avoid build-time issues
+    const { prisma } = await import('@/lib/prisma');
 
     // Save user message to database
     if (chatId) {
