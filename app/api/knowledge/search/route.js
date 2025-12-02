@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic';
+
 // Simple text-based search (for production, use vector embeddings)
 export async function POST(req) {
   try {

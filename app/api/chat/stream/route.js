@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getModelConfig } from "@/lib/ai-models";
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // Simple RAG: Search knowledge base and add context
 async function getRAGContext(userMessage) {
   try {
@@ -289,61 +293,8 @@ export async function POST(req) {
                 console.log("Final buffer parse (usually fine if empty):", e.message);
               }
             }
-          } else if (modelConfig.provider === "openai") {
-            if (!process.env.OPENAI_API_KEY) {
-              throw new Error("OPENAI_API_KEY is not set in environment variables");
-            }
-
-            const res = await fetch("https://api.openai.com/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-              },
-              body: JSON.stringify({
-                model: modelConfig.model,
-                messages: enhancedMessages.map((msg) => ({
-                  role: msg.role === "user" ? "user" : "assistant",
-                  content: msg.parts[0].text,
-                })),
-                stream: true,
-              }),
-            });
-
-            if (!res.ok) {
-              const errorText = await res.text();
-              throw new Error(`OpenAI API error: ${res.status} - ${errorText}`);
-            }
-
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split("\n");
-
-              for (const line of lines) {
-                if (line.trim() && line.startsWith("data: ") && line !== "data: [DONE]") {
-                  try {
-                    const jsonStr = line.slice(6).trim();
-                    if (jsonStr) {
-                      const data = JSON.parse(jsonStr);
-                      const text = data?.choices?.[0]?.delta?.content || "";
-                      if (text) {
-                        fullResponse += text;
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
-                      }
-                    }
-                  } catch (e) {
-                    // Skip invalid JSON lines
-                    console.error("Error parsing OpenAI response line:", e, line);
-                  }
-                }
-              }
-            }
+          } else {
+            throw new Error(`Unsupported provider: ${modelConfig.provider}`);
           }
 
           // Save assistant response to database
