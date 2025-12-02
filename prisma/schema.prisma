@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  Message[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  role      String   // "user" or "assistant" or "system"
+  content   String
+  imageUrl  String?
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Knowledge {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  embedding String? // JSON string of embedding vector
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
