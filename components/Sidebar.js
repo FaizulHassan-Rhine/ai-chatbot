@@ -75,13 +75,16 @@ export default function Sidebar({
                       {chat.title}
                     </span>
                     <Button
+                      type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={(e) => {
                         e.stopPropagation();
+                        e.preventDefault();
                         onDeleteChat(chat.id);
                       }}
+                      title="Delete chat"
                     >
                       <Trash2 size={14} />
                     </Button>

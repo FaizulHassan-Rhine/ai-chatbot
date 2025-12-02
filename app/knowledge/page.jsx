@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { getAllKnowledge, createKnowledge, deleteKnowledge } from "@/lib/indexeddb";
 
 export default function KnowledgePage() {
   const [knowledge, setKnowledge] = useState([]);
@@ -21,30 +22,34 @@ export default function KnowledgePage() {
 
   const fetchKnowledge = async () => {
     try {
-      const res = await fetch("/api/knowledge");
-      const data = await res.json();
+      const data = await getAllKnowledge();
       setKnowledge(data);
     } catch (error) {
       console.error("Error fetching knowledge:", error);
+      setKnowledge([]);
     }
   };
 
-  const createKnowledge = async () => {
+  const handleCreateKnowledge = async () => {
     if (!title.trim() || !content.trim()) return;
 
     try {
-      const res = await fetch("/api/knowledge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content }),
-      });
-      const newKnowledge = await res.json();
+      const newKnowledge = await createKnowledge(title, content);
       setKnowledge([newKnowledge, ...knowledge]);
       setTitle("");
       setContent("");
       setShowForm(false);
     } catch (error) {
       console.error("Error creating knowledge:", error);
+    }
+  };
+
+  const handleDeleteKnowledge = async (knowledgeId) => {
+    try {
+      await deleteKnowledge(knowledgeId);
+      setKnowledge(knowledge.filter((k) => k.id !== knowledgeId));
+    } catch (error) {
+      console.error("Error deleting knowledge:", error);
     }
   };
 
@@ -115,7 +120,7 @@ export default function KnowledgePage() {
                   rows={6}
                 />
                 <div className="flex gap-2">
-                  <Button onClick={createKnowledge}>Save</Button>
+                  <Button onClick={handleCreateKnowledge}>Save</Button>
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -143,7 +148,17 @@ export default function KnowledgePage() {
             filteredKnowledge.map((item) => (
               <Card key={item.id}>
                 <CardHeader>
-                  <CardTitle>{item.title}</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>{item.title}</CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteKnowledge(item.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <X size={18} />
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <p className="whitespace-pre-wrap text-muted-foreground mb-4">

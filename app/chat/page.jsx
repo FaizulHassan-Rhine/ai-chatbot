@@ -14,6 +14,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  getAllChats,
+  getChatById,
+  createChat,
+  deleteChat,
+  getMessagesByChatId,
+  createMessage,
+  searchKnowledge,
+} from "@/lib/indexeddb";
 
 export default function ChatPage() {
   const [chats, setChats] = useState([]);
@@ -48,40 +57,24 @@ export default function ChatPage() {
 
   const fetchChats = async () => {
     try {
-      const res = await fetch("/api/chats");
-      const data = await res.json();
-      // Ensure data is an array, handle errors gracefully
-      if (Array.isArray(data)) {
-        setChats(data);
-      } else if (data.error) {
-        console.error("API error:", data.error);
-        setChats([]); // Set empty array on error
-      } else {
-        setChats([]); // Fallback to empty array
-      }
+      const data = await getAllChats();
+      setChats(data);
     } catch (error) {
       console.error("Error fetching chats:", error);
-      setChats([]); // Set empty array on error
+      setChats([]);
     }
   };
 
   const loadChat = async (chatId) => {
     try {
-      const res = await fetch(`/api/chats/${chatId}`);
-      const data = await res.json();
-      // Ensure data has messages array
-      if (data && Array.isArray(data.messages)) {
-        setMessages(
-          data.messages.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-            imageUrl: msg.imageUrl,
-          }))
-        );
-      } else {
-        console.error("Invalid chat data:", data);
-        setMessages([]);
-      }
+      const messages = await getMessagesByChatId(chatId);
+      setMessages(
+        messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+          imageUrl: msg.imageUrl,
+        }))
+      );
     } catch (error) {
       console.error("Error loading chat:", error);
       setMessages([]);
@@ -90,12 +83,7 @@ export default function ChatPage() {
 
   const createNewChat = async () => {
     try {
-      const res = await fetch("/api/chats", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "New Chat" }),
-      });
-      const newChat = await res.json();
+      const newChat = await createChat("New Chat");
       setChats([newChat, ...chats]);
       setCurrentChatId(newChat.id);
       setMessages([]);
@@ -104,16 +92,22 @@ export default function ChatPage() {
     }
   };
 
-  const deleteChat = async (chatId) => {
+  const deleteChatHandler = async (chatId) => {
     try {
-      await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
-      setChats(chats.filter((c) => c.id !== chatId));
+      await deleteChat(chatId);
+      // Update UI optimistically
+      const updatedChats = chats.filter((c) => c.id !== chatId);
+      setChats(updatedChats);
+      
       if (currentChatId === chatId) {
         setCurrentChatId(null);
-        setMessages([]);
+        setMessages([
+          { role: "assistant", content: "Hi! I'm your AI assistant. How can I help you today?" }
+        ]);
       }
     } catch (error) {
       console.error("Error deleting chat:", error);
+      alert("Failed to delete chat. Please try again.");
     }
   };
 
@@ -136,17 +130,42 @@ export default function ChatPage() {
     let chatId = currentChatId;
     if (!chatId) {
       try {
-        const res = await fetch("/api/chats", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: input.slice(0, 50) || "New Chat" }),
-        });
-        const newChat = await res.json();
+        const newChat = await createChat(input.slice(0, 50) || "New Chat");
         chatId = newChat.id;
         setCurrentChatId(chatId);
         setChats([newChat, ...chats]);
       } catch (error) {
         console.error("Error creating chat:", error);
+      }
+    }
+
+    // Save user message to IndexedDB
+    if (chatId) {
+      try {
+        await createMessage({
+          role: "user",
+          content: input,
+          imageUrl: uploadedImage,
+          chatId: chatId,
+        });
+      } catch (error) {
+        console.error("Error saving user message:", error);
+      }
+    }
+
+    // Get RAG context if enabled
+    let ragContext = "";
+    if (useRAG && chatId) {
+      try {
+        const results = await searchKnowledge(input);
+        if (results && results.length > 0) {
+          const context = results
+            .map((r) => `Title: ${r.title}\nContent: ${r.content}`)
+            .join("\n\n");
+          ragContext = `\n\nRelevant knowledge base context:\n${context}\n\nUse this context to provide accurate information.`;
+        }
+      } catch (error) {
+        console.error("Error getting RAG context:", error);
       }
     }
 
@@ -156,9 +175,8 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages,
-          chatId: chatId,
           modelId: selectedModel,
-          useRAG: useRAG,
+          ragContext: ragContext, // Pass RAG context directly
         }),
       });
 
@@ -207,6 +225,18 @@ export default function ChatPage() {
 
       if (assistantMessage) {
         setMessages([...newMessages, { role: "assistant", content: assistantMessage }]);
+        // Save assistant message to IndexedDB
+        if (chatId) {
+          try {
+            await createMessage({
+              role: "assistant",
+              content: assistantMessage,
+              chatId: chatId,
+            });
+          } catch (error) {
+            console.error("Error saving assistant message:", error);
+          }
+        }
       } else {
         throw new Error("No response received from AI");
       }
@@ -264,7 +294,7 @@ export default function ChatPage() {
         currentChatId={currentChatId}
         onNewChat={createNewChat}
         onSelectChat={setCurrentChatId}
-        onDeleteChat={deleteChat}
+        onDeleteChat={deleteChatHandler}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
       />

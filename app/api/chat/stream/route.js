@@ -6,62 +6,10 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const fetchCache = 'force-no-store';
 
-// Simple RAG: Search knowledge base and add context
-async function getRAGContext(userMessage) {
-  try {
-    // Dynamic import to avoid build-time issues
-    const { prisma } = await import('@/lib/prisma');
-    // Simple text-based search (for production, use vector embeddings)
-    const allKnowledge = await prisma.knowledge.findMany();
-    const queryLower = userMessage.toLowerCase();
-    const results = allKnowledge
-      .filter(
-        (k) =>
-          k.title.toLowerCase().includes(queryLower) ||
-          k.content.toLowerCase().includes(queryLower)
-      )
-      .slice(0, 5);
-    
-    if (results && results.length > 0) {
-      const context = results
-        .map((r) => `Title: ${r.title}\nContent: ${r.content}`)
-        .join("\n\n");
-      return `\n\nRelevant knowledge base context:\n${context}\n\nUse this context to provide accurate information.`;
-    }
-  } catch (error) {
-    console.error("RAG search error:", error);
-  }
-  return "";
-}
-
 export async function POST(req) {
   try {
-    const { messages, chatId, modelId = "gemini", useRAG = false } = await req.json();
+    const { messages, modelId = "gemini", ragContext = "" } = await req.json();
     const modelConfig = getModelConfig(modelId);
-
-    // Dynamic import Prisma to avoid build-time issues
-    const { prisma } = await import('@/lib/prisma');
-
-    // Save user message to database
-    if (chatId) {
-      const lastUserMessage = messages[messages.length - 1];
-      if (lastUserMessage.role === "user") {
-        await prisma.message.create({
-          data: {
-            role: "user",
-            content: lastUserMessage.content,
-            chatId: chatId,
-          },
-        });
-      }
-    }
-
-    // Get RAG context if enabled
-    const lastUserMessage = messages[messages.length - 1];
-    let ragContext = "";
-    if (useRAG && lastUserMessage.role === "user") {
-      ragContext = await getRAGContext(lastUserMessage.content);
-    }
 
     // Create a streaming response
     const encoder = new TextEncoder();
@@ -302,16 +250,7 @@ export async function POST(req) {
             throw new Error(`Unsupported provider: ${modelConfig.provider}`);
           }
 
-          // Save assistant response to database
-          if (chatId && fullResponse) {
-            await prisma.message.create({
-              data: {
-                role: "assistant",
-                content: fullResponse,
-                chatId: chatId,
-              },
-            });
-          }
+          // Messages are now saved on the client side using IndexedDB
 
           // Only throw error if we truly got nothing (not even partial responses)
           if (fullResponse === "") {
