@@ -50,9 +50,18 @@ export default function ChatPage() {
     try {
       const res = await fetch("/api/chats");
       const data = await res.json();
-      setChats(data);
+      // Ensure data is an array, handle errors gracefully
+      if (Array.isArray(data)) {
+        setChats(data);
+      } else if (data.error) {
+        console.error("API error:", data.error);
+        setChats([]); // Set empty array on error
+      } else {
+        setChats([]); // Fallback to empty array
+      }
     } catch (error) {
       console.error("Error fetching chats:", error);
+      setChats([]); // Set empty array on error
     }
   };
 
@@ -60,15 +69,22 @@ export default function ChatPage() {
     try {
       const res = await fetch(`/api/chats/${chatId}`);
       const data = await res.json();
-      setMessages(
-        data.messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-          imageUrl: msg.imageUrl,
-        }))
-      );
+      // Ensure data has messages array
+      if (data && Array.isArray(data.messages)) {
+        setMessages(
+          data.messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            imageUrl: msg.imageUrl,
+          }))
+        );
+      } else {
+        console.error("Invalid chat data:", data);
+        setMessages([]);
+      }
     } catch (error) {
       console.error("Error loading chat:", error);
+      setMessages([]);
     }
   };
 

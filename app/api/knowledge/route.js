@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    // Dynamic import to avoid build-time issues
+    const { prisma } = await import('@/lib/prisma');
     const knowledge = await prisma.knowledge.findMany({
       orderBy: { createdAt: "desc" },
     });
@@ -17,6 +18,8 @@ export async function GET() {
 
 export async function POST(req) {
   try {
+    // Dynamic import to avoid build-time issues
+    const { prisma } = await import('@/lib/prisma');
     const { title, content } = await req.json();
     const knowledge = await prisma.knowledge.create({
       data: {

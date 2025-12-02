@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req, { params }) {
   try {
+    // Dynamic import to avoid build-time issues
+    const { prisma } = await import('@/lib/prisma');
     const chat = await prisma.chat.findUnique({
       where: { id: params.id },
       include: {
@@ -27,6 +28,8 @@ export async function GET(req, { params }) {
 
 export async function DELETE(req, { params }) {
   try {
+    // Dynamic import to avoid build-time issues
+    const { prisma } = await import('@/lib/prisma');
     await prisma.chat.delete({
       where: { id: params.id },
     });

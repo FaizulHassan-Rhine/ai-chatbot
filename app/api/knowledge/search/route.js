@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = 'force-dynamic';
 
 // Simple text-based search (for production, use vector embeddings)
 export async function POST(req) {
   try {
+    // Dynamic import to avoid build-time issues
+    const { prisma } = await import('@/lib/prisma');
     const { query } = await req.json();
     
     if (!query) {
