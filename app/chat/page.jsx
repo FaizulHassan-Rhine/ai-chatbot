@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { Send, Paperclip, Settings, Bot, Menu, X, Download } from "lucide-react";
+import { Send, Paperclip, Settings, Bot, Menu, X, Download, Globe, Moon, Sun } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import Sidebar from "@/components/Sidebar";
 import ChatMessage from "@/components/ChatMessage";
@@ -24,6 +24,7 @@ import {
   createMessage,
   searchKnowledge,
 } from "@/lib/indexeddb";
+import { useTheme } from "@/components/ThemeProvider";
 
 export default function ChatPage() {
   const [chats, setChats] = useState([]);
@@ -32,11 +33,13 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [selectedModel, setSelectedModel] = useState("gemini");
+  const [selectedModel, setSelectedModel] = useState("openrouter-gpt-oss-120b");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [uploadedImage, setUploadedImage] = useState(null);
   const [useRAG, setUseRAG] = useState(false);
+  const [useWeb, setUseWeb] = useState(false);
   const messagesEndRef = useRef(null);
+  const { theme, toggleTheme, mounted: themeMounted } = useTheme();
 
   useEffect(() => {
     fetchChats();
@@ -253,6 +256,7 @@ export default function ChatPage() {
           messages: newMessages,
           modelId: selectedModel,
           ragContext: ragContext, // Pass RAG context directly
+          useWeb: useWeb,
         }),
       });
 
@@ -321,7 +325,7 @@ export default function ChatPage() {
       console.error("Error sending message:", error);
       setMessages([
         ...newMessages,
-        { role: "assistant", content: `Sorry, I encountered an error: ${error.message}. Please check your API keys in the .env file.` },
+        { role: "assistant", content: `Sorry, I encountered an error: ${error.message}` },
       ]);
     } finally {
       setLoading(false);
@@ -375,46 +379,73 @@ export default function ChatPage() {
         onToggle={() => setSidebarOpen(!sidebarOpen)}
       />
 
-      <div className="flex-1 flex flex-col">
-        <Card className="rounded-none border-x-0 border-t-0 border-b">
-          <div className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="shrink-0 border-b border-border/80 bg-card/95 backdrop-blur-sm">
+          <div className="flex h-14 items-center justify-between gap-3 px-3 md:px-5">
+            <div className="flex items-center gap-3 min-w-0">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden"
+                className="lg:hidden h-9 w-9 shrink-0"
               >
-                {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
               </Button>
-              <div className="flex items-center gap-2">
-                <Bot className="h-5 w-5 text-primary" />
-                <h1 className="text-lg font-semibold">AI Chatbot</h1>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Bot className="h-4 w-4" strokeWidth={2.25} />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-sm font-semibold tracking-tight text-foreground leading-none">
+                    AI Chatbot
+                  </h1>
+                  <p className="text-[11px] text-muted-foreground mt-1 hidden sm:block truncate">
+                    Assistant workspace
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pr-16">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               {currentChatId && messages.length > 0 && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={downloadChat}
-                  className="gap-2"
+                  className="gap-1.5 shrink-0 h-9 px-2.5 sm:px-3 text-xs font-medium"
                   title="Download chat"
                 >
-                  <Download size={16} />
-                  <span className="hidden sm:inline">Download</span>
+                  <Download size={15} className="shrink-0" />
+                  <span className="hidden sm:inline">Export</span>
                 </Button>
               )}
+              <Button
+                type="button"
+                variant={useWeb ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5 h-9 px-2.5 sm:px-3 shrink-0 text-xs font-medium"
+                onClick={() => setUseWeb(!useWeb)}
+                title="Use live web search for fresher answers"
+              >
+                <Globe size={15} className="shrink-0 opacity-90" />
+                <span className="hidden sm:inline">Web</span>
+                <span
+                  className={`hidden sm:inline text-[10px] font-semibold tabular-nums ${useWeb ? "text-primary-foreground/90" : "text-muted-foreground"}`}
+                >
+                  {useWeb ? "On" : "Off"}
+                </span>
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <Settings size={16} />
-                    <span className="hidden sm:inline">{AI_MODELS[selectedModel]?.name || "Select Model"}</span>
+                  <Button variant="outline" size="sm" className="gap-1.5 h-9 max-w-[min(100%,14rem)] sm:max-w-[16rem] px-2.5 sm:px-3 text-xs font-medium">
+                    <Settings size={15} className="shrink-0 opacity-80" />
+                    <span className="truncate">{AI_MODELS[selectedModel]?.name || "Model"}</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>AI Models</DropdownMenuLabel>
+                <DropdownMenuContent align="end" className="w-[min(100vw-2rem,18rem)]">
+                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                    Model
+                  </DropdownMenuLabel>
                   <Separator />
                   {Object.values(AI_MODELS).map((model) => (
                     <DropdownMenuItem
@@ -437,12 +468,24 @@ export default function ChatPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              {themeMounted && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                  onClick={toggleTheme}
+                  title={theme === "dark" ? "Light mode" : "Dark mode"}
+                >
+                  {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+                </Button>
+              )}
             </div>
           </div>
-        </Card>
+        </header>
 
-        <ScrollArea className="flex-1 p-4">
-          <div className="max-w-4xl mx-auto space-y-4">
+        <ScrollArea className="flex-1 bg-muted/15">
+          <div className="max-w-3xl mx-auto px-3 py-6 md:px-8 md:py-8 space-y-1">
             {messages.map((msg, i) => (
               <ChatMessage key={i} message={msg} />
             ))}
@@ -455,7 +498,7 @@ export default function ChatPage() {
             )}
 
             {loading && !streamingText && (
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-2 text-muted-foreground pl-12">
                 <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
                 <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
                 <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.4s" }} />
@@ -467,7 +510,7 @@ export default function ChatPage() {
         </ScrollArea>
 
         {uploadedImage && (
-          <Card className="mx-4 mb-2 p-3">
+          <Card className="mx-4 md:mx-6 mb-2 p-3 border-primary/20 bg-primary/5">
             <div className="flex items-center gap-2">
               {uploadedImage.startsWith("data:") ? (
                 <img
@@ -496,23 +539,26 @@ export default function ChatPage() {
           </Card>
         )}
 
-        <Card className="rounded-none border-x-0 border-b-0 border-t m-4">
+        <div className="shrink-0 border-t border-border/80 bg-card/80 backdrop-blur-sm px-3 py-3 md:px-5 md:py-4">
           <div
             {...getRootProps()}
-            className={`p-4 ${isDragActive ? "border-2 border-primary rounded-lg" : ""}`}
+            className={`rounded-xl border border-border/80 bg-background shadow-sm transition-colors ${
+              isDragActive ? "ring-2 ring-primary/30 border-primary/40 bg-primary/[0.03]" : ""
+            }`}
           >
             <input {...getInputProps()} />
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-1.5 p-2 md:p-2.5">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
+                className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground"
                 onClick={(e) => {
                   e.stopPropagation();
                   open();
                 }}
               >
-                <Paperclip size={20} />
+                <Paperclip size={18} />
               </Button>
 
               <Textarea
@@ -524,8 +570,8 @@ export default function ChatPage() {
                     sendMessage();
                   }
                 }}
-                placeholder="Type your message... (Shift+Enter for new line)"
-                className="min-h-[60px] max-h-[200px] resize-none"
+                placeholder="Message…"
+                className="min-h-[44px] max-h-[200px] resize-none border-0 focus-visible:ring-0 bg-transparent shadow-none text-sm placeholder:text-muted-foreground/70 py-2.5"
                 rows={1}
               />
 
@@ -537,13 +583,13 @@ export default function ChatPage() {
                 }}
                 disabled={loading || (!input.trim() && !uploadedImage)}
                 size="icon"
-                className="h-[60px] w-[60px]"
+                className="h-10 w-10 shrink-0 rounded-lg"
               >
-                <Send size={20} />
+                <Send size={18} />
               </Button>
             </div>
           </div>
-        </Card>
+        </div>
       </div>
     </div>
   );

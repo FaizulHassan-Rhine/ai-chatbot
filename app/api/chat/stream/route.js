@@ -1,14 +1,90 @@
 import { NextResponse } from "next/server";
-import { getModelConfig } from "@/lib/ai-models";
+import { getModelConfig, OPENROUTER_FREE_FALLBACK_MODELS } from "@/lib/ai-models";
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const fetchCache = 'force-no-store';
 
+function decodeHtmlEntities(text = "") {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSearchResultLink(rawLink = "") {
+  try {
+    const decoded = decodeHtmlEntities(rawLink);
+    const withProtocol = decoded.startsWith("//") ? `https:${decoded}` : decoded;
+    const url = new URL(withProtocol);
+    const uddg = url.searchParams.get("uddg");
+    if (uddg) {
+      return decodeURIComponent(uddg);
+    }
+    return withProtocol;
+  } catch {
+    return decodeHtmlEntities(rawLink);
+  }
+}
+
+async function fetchWebContext(query) {
+  const trimmed = (query || "").trim();
+  if (!trimmed) return "";
+
+  try {
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+
+    if (!res.ok) return "";
+    const html = await res.text();
+    const resultRegex =
+      /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+
+    const items = [];
+    let match;
+    while ((match = resultRegex.exec(html)) !== null && items.length < 5) {
+      const link = normalizeSearchResultLink(match[1] || "");
+      const title = decodeHtmlEntities((match[2] || "").replace(/<[^>]+>/g, ""));
+      const snippet = decodeHtmlEntities((match[3] || "").replace(/<[^>]+>/g, ""));
+      if (title && snippet) {
+        items.push({ title, snippet, link });
+      }
+    }
+
+    if (items.length === 0) return "";
+
+    const lines = items
+      .map(
+        (item, i) =>
+          `${i + 1}. ${item.title}\nSnippet: ${item.snippet}\nSource: ${item.link}`
+      )
+      .join("\n\n");
+
+    return `\n\nLive web search context:\n${lines}\n`;
+  } catch (error) {
+    console.error("Web context fetch failed:", error);
+    return "";
+  }
+}
+
 export async function POST(req) {
   try {
-    const { messages, modelId = "gemini", ragContext = "" } = await req.json();
+    const {
+      messages,
+      modelId = "openrouter-gpt-oss-120b",
+      ragContext = "",
+      useWeb = false,
+    } = await req.json();
     const modelConfig = getModelConfig(modelId);
 
     // Create a streaming response
@@ -34,7 +110,14 @@ export async function POST(req) {
             return null;
           }
 
-          // Prepare messages with RAG context
+          const lastUserMessage = [...messages]
+            .reverse()
+            .find((msg) => msg.role === "user" && (msg.content || "").trim());
+          const webContext = useWeb
+            ? await fetchWebContext(lastUserMessage?.content || "")
+            : "";
+
+          // Prepare messages with RAG/web context
           const enhancedMessages = messages.map((msg, index) => {
             let content = msg.content || "";
             
@@ -43,9 +126,18 @@ export async function POST(req) {
               content = "Please extract and describe all text visible in this image. If there is any text, transcribe it exactly as it appears.";
             }
             
-            // Add RAG context to the last user message
-            if (index === messages.length - 1 && msg.role === "user" && ragContext) {
-              content = content + ragContext;
+            // Add RAG + web context to the last user message.
+            if (index === messages.length - 1 && msg.role === "user") {
+              if (ragContext) content += ragContext;
+              if (webContext) {
+                content += webContext;
+                content +=
+                  "\n\nWeb-grounding rules (strict):" +
+                  "\n1) Use only facts present in the live web context above." +
+                  "\n2) If a requested detail is missing or conflicting, explicitly say it is not verified from current sources." +
+                  "\n3) Do not invent scorecards, player stats, schedules, or quotes." +
+                  "\n4) End with a short 'Sources:' list using only the provided source URLs.";
+              }
             }
             
             // Handle image data
@@ -75,16 +167,71 @@ export async function POST(req) {
 
             // Use v1beta API with the configured model
             // Extract model name (remove 'models/' prefix if present)
-            const modelName = modelConfig.model.replace(/^models\//, '');
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?key=${process.env.GEMINI_API_KEY}`;
-            
-            const res = await fetch(apiUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: enhancedMessages,
-              }),
-            });
+            let modelName = modelConfig.model.replace(/^models\//, "");
+            let fallbackUsed = false;
+            const makeGeminiRequest = async (targetModelName) => {
+              const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModelName}:streamGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+              return fetch(apiUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: enhancedMessages,
+                }),
+              });
+            };
+            const geminiModelsToTry = [
+              modelName,
+              "gemini-2.5-flash",
+              "gemini-2.0-flash",
+            ].filter((m, i, arr) => arr.indexOf(m) === i);
+
+            let res = await makeGeminiRequest(geminiModelsToTry[0]);
+            for (let i = 1; !res.ok && i < geminiModelsToTry.length; i++) {
+              // Retry on overload/quota/transient failures.
+              if (res.status === 429 || res.status === 503 || res.status >= 500) {
+                modelName = geminiModelsToTry[i];
+                fallbackUsed = true;
+                res = await makeGeminiRequest(modelName);
+                continue;
+              }
+              break;
+            }
+
+            // When Gemini free tier is exhausted, fall back to OpenRouter (same key as standalone chat).
+            let usedOpenRouterFromGemini = false;
+            if (!res.ok && process.env.OPENROUTER_API_KEY) {
+              const retryable =
+                res.status === 429 || res.status === 503 || res.status >= 500;
+              if (retryable) {
+                const orModels = OPENROUTER_FREE_FALLBACK_MODELS;
+                const makeOpenRouterRequest = async (targetModel) =>
+                  fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                      "HTTP-Referer": "http://localhost:3000",
+                      "X-Title": "AI Chatbot",
+                    },
+                    body: JSON.stringify({
+                      model: targetModel,
+                      stream: true,
+                      messages: enhancedMessages.map((msg) => ({
+                        role: msg.role === "model" ? "assistant" : msg.role,
+                        content: msg.parts?.[0]?.text || "",
+                      })),
+                    }),
+                  });
+                for (const m of orModels) {
+                  const orRes = await makeOpenRouterRequest(m);
+                  if (orRes.ok) {
+                    res = orRes;
+                    usedOpenRouterFromGemini = true;
+                    break;
+                  }
+                }
+              }
+            }
 
             if (!res.ok) {
               const errorText = await res.text();
@@ -105,15 +252,50 @@ export async function POST(req) {
               if (res.status === 404) {
                 errorMessage += "\n\nPossible solutions:";
                 errorMessage += "\n1. Check if your API key is valid at https://makersuite.google.com/app/apikey";
-                errorMessage += "\n2. Make sure 'gemini-pro' model is available in your region";
+                errorMessage += "\n2. Make sure the selected model is available in your region";
                 errorMessage += "\n3. Try using a different API key or check your quota";
               } else if (res.status === 401 || res.status === 403) {
                 errorMessage += "\n\nYour API key may be invalid or expired. Please check your .env file.";
+              } else if (res.status === 429) {
+                errorMessage +=
+                  "\n\nGemini free-tier quota may be exhausted. Add OPENROUTER_API_KEY for automatic fallback, or wait and retry.";
               }
               
               throw new Error(errorMessage);
             }
 
+            // OpenRouter returns SSE text deltas; Gemini returns JSON array chunks.
+            if (usedOpenRouterFromGemini) {
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = "";
+
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() || "";
+
+                for (const line of lines) {
+                  if (!line.startsWith("data: ")) continue;
+                  const payload = line.slice(6).trim();
+                  if (!payload || payload === "[DONE]") continue;
+                  try {
+                    const data = JSON.parse(payload);
+                    const text = data?.choices?.[0]?.delta?.content || "";
+                    if (text) {
+                      hasReceivedData = true;
+                      fullResponse += text;
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+                    }
+                  } catch {
+                    // ignore
+                  }
+                }
+              }
+            } else {
             // Gemini streaming returns an array of JSON objects: [{...},\r\n{...}]
             // We need to parse each complete object as it arrives
             const reader = res.body.getReader();
@@ -244,6 +426,99 @@ export async function POST(req) {
               } catch (e) {
                 // Final buffer might be incomplete, that's okay
                 console.log("Final buffer parse (usually fine if empty):", e.message);
+              }
+            }
+            }
+          } else if (modelConfig.provider === "openrouter") {
+            if (!process.env.OPENROUTER_API_KEY) {
+              throw new Error("OPENROUTER_API_KEY is not set in environment variables");
+            }
+
+            const openRouterModelsToTry = [
+              modelConfig.model,
+              ...OPENROUTER_FREE_FALLBACK_MODELS,
+            ].filter((m, i, arr) => arr.indexOf(m) === i);
+
+            const makeOpenRouterRequest = async (targetModel) =>
+              fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                  "HTTP-Referer": "http://localhost:3000",
+                  "X-Title": "AI Chatbot",
+                },
+                body: JSON.stringify({
+                  model: targetModel,
+                  stream: true,
+                  messages: enhancedMessages.map((msg) => ({
+                    role: msg.role === "model" ? "assistant" : msg.role,
+                    content: msg.parts?.[0]?.text || "",
+                  })),
+                }),
+              });
+
+            let selectedOpenRouterModel = openRouterModelsToTry[0];
+            let res = await makeOpenRouterRequest(selectedOpenRouterModel);
+            let openRouterFallbackUsed = false;
+            let lastOpenRouterErrorText = "";
+
+            for (let i = 1; !res.ok && i < openRouterModelsToTry.length; i++) {
+              // Retry with another free model for provider overload/rate-limit scenarios.
+              if (res.status === 429 || res.status >= 500) {
+                lastOpenRouterErrorText = await res.text();
+                selectedOpenRouterModel = openRouterModelsToTry[i];
+                openRouterFallbackUsed = true;
+                res = await makeOpenRouterRequest(selectedOpenRouterModel);
+                continue;
+              }
+              break;
+            }
+
+            if (!res.ok) {
+              const errorText = (await res.text()) || lastOpenRouterErrorText;
+              let errorMessage = `OpenRouter API error: ${res.status}`;
+              try {
+                const errorData = JSON.parse(errorText);
+                errorMessage += ` - ${errorData?.error?.message || errorText}`;
+              } catch {
+                errorMessage += ` - ${errorText}`;
+              }
+              if (res.status === 429) {
+                errorMessage += "\n\nAll configured free OpenRouter models are currently rate-limited or overloaded.";
+              }
+              throw new Error(errorMessage);
+            }
+
+            // Keep fallback transparent for reliability without showing a system banner.
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const payload = line.slice(6).trim();
+                if (!payload || payload === "[DONE]") continue;
+                try {
+                  const data = JSON.parse(payload);
+                  const text = data?.choices?.[0]?.delta?.content || "";
+                  if (text) {
+                    hasReceivedData = true;
+                    fullResponse += text;
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+                  }
+                } catch {
+                  // Ignore malformed partial lines.
+                }
               }
             }
           } else {

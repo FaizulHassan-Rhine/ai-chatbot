@@ -10,7 +10,7 @@ export async function GET() {
       );
     }
 
-    const modelName = "gemini-2.0-flash";
+    const modelName = "gemini-2.5-flash";
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?key=${process.env.GEMINI_API_KEY}`;
 
     const res = await fetch(apiUrl, {
