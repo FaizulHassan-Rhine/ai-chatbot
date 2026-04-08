@@ -83,7 +83,7 @@ export async function POST(req) {
       messages,
       modelId = "openrouter-gpt-oss-120b",
       ragContext = "",
-      useWeb = false,
+      useWeb = true,
     } = await req.json();
     const modelConfig = getModelConfig(modelId);
 
@@ -211,7 +211,7 @@ export async function POST(req) {
                       "Content-Type": "application/json",
                       Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
                       "HTTP-Referer": "http://localhost:3000",
-                      "X-Title": "AI Chatbot",
+                      "X-Title": "Hermes AI",
                     },
                     body: JSON.stringify({
                       model: targetModel,
@@ -446,7 +446,7 @@ export async function POST(req) {
                   "Content-Type": "application/json",
                   Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
                   "HTTP-Referer": "http://localhost:3000",
-                  "X-Title": "AI Chatbot",
+                  "X-Title": "Hermes AI",
                 },
                 body: JSON.stringify({
                   model: targetModel,

@@ -25,6 +25,7 @@ import {
   searchKnowledge,
 } from "@/lib/indexeddb";
 import { useTheme } from "@/components/ThemeProvider";
+import { SITE_NAME } from "@/lib/site";
 
 export default function ChatPage() {
   const [chats, setChats] = useState([]);
@@ -37,7 +38,7 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [uploadedImage, setUploadedImage] = useState(null);
   const [useRAG, setUseRAG] = useState(false);
-  const [useWeb, setUseWeb] = useState(false);
+  const [useWeb, setUseWeb] = useState(true);
   const messagesEndRef = useRef(null);
   const { theme, toggleTheme, mounted: themeMounted } = useTheme();
 
@@ -50,7 +51,7 @@ export default function ChatPage() {
       loadChat(currentChatId);
     } else {
       setMessages([
-        { role: "assistant", content: "Hi! I'm your AI assistant. How can I help you today?" }
+        { role: "assistant", content: `Hi! I'm ${SITE_NAME}. How can I help you today?` }
       ]);
     }
   }, [currentChatId]);
@@ -123,7 +124,7 @@ export default function ChatPage() {
       if (currentChatId === chatId) {
         setCurrentChatId(null);
         setMessages([
-          { role: "assistant", content: "Hi! I'm your AI assistant. How can I help you today?" }
+          { role: "assistant", content: `Hi! I'm ${SITE_NAME}. How can I help you today?` }
         ]);
       }
     } catch (error) {
@@ -397,10 +398,10 @@ export default function ChatPage() {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-sm font-semibold tracking-tight text-foreground leading-none">
-                    AI Chatbot
+                    {SITE_NAME}
                   </h1>
                   <p className="text-[11px] text-muted-foreground mt-1 hidden sm:block truncate">
-                    Assistant workspace
+                    Streaming chat and knowledge
                   </p>
                 </div>
               </div>

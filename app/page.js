@@ -2,6 +2,7 @@ import { MessageCircle, Bot, ArrowRight, Sparkles, Database, Zap } from 'lucide-
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
+import { SITE_NAME, SITE_TAGLINE } from '@/lib/site'
 
 export default function Home() {
   return (
@@ -11,10 +12,10 @@ export default function Home() {
           <div className="text-center mb-12">
             <div className="flex items-center justify-center gap-3 mb-4">
               <Bot className="w-12 h-12 text-primary" />
-              <h1 className="text-5xl font-bold">AI Chatbot</h1>
+              <h1 className="text-5xl font-bold">{SITE_NAME}</h1>
             </div>
-            <p className="text-xl text-muted-foreground mb-8">
-              Advanced AI-powered chatbot with streaming, knowledge base, and multiple AI models
+            <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+              {SITE_TAGLINE}
             </p>
             <div className="flex gap-4 justify-center">
               <Button asChild size="lg" className="gap-2">
@@ -97,7 +98,7 @@ export default function Home() {
                 </div>
                 <CardTitle>Multiple AI Models</CardTitle>
                 <CardDescription>
-                  Switch between Gemini, GPT-4, and more
+                  Choose Gemini, OpenRouter free models, and more
                 </CardDescription>
               </CardHeader>
             </Card>
