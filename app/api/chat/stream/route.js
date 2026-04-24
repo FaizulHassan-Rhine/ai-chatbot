@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getModelConfig, OPENROUTER_FREE_FALLBACK_MODELS } from "@/lib/ai-models";
+import {
+  getModelConfig,
+  OPENROUTER_FREE_FALLBACK_MODELS,
+  OPENROUTER_VISION_FALLBACK_MODELS,
+} from "@/lib/ai-models";
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
@@ -75,6 +79,48 @@ async function fetchWebContext(query) {
     console.error("Web context fetch failed:", error);
     return "";
   }
+}
+
+/**
+ * Converts an internal message (with optional Gemini-style `parts` array and
+ * raw `imageUrl` data-URL) into an OpenAI-compatible message object.
+ *
+ * Text-only  → { role, content: "string" }
+ * With image → { role, content: [ {type:"text",...}, {type:"image_url",...} ] }
+ */
+function buildOpenRouterMessage(msg) {
+  const role = msg.role === "model" ? "assistant" : msg.role;
+  const text = msg.parts?.[0]?.text ?? "";
+
+  // Check if the original message had an image attached (carried via parts or
+  // the raw imageUrl property — both paths are possible depending on when in
+  // the pipeline this is called).
+  const imageUrl = msg.imageUrl || msg.parts?.find((p) => p.image_url)?.image_url?.url || null;
+
+  // Also check for inline_data (Gemini format inside parts)
+  const inlineData = msg.parts?.find((p) => p.inline_data);
+
+  if (!imageUrl && !inlineData) {
+    // Text-only — keep content as a plain string for maximum compatibility.
+    return { role, content: text || " " };
+  }
+
+  const contentParts = [];
+
+  if (text) {
+    contentParts.push({ type: "text", text });
+  }
+
+  if (imageUrl) {
+    // imageUrl is a data: URI or an https:// URL — both work for OpenRouter.
+    contentParts.push({ type: "image_url", image_url: { url: imageUrl } });
+  } else if (inlineData) {
+    // Convert Gemini inline_data back to a data: URI for OpenRouter.
+    const dataUri = `data:${inlineData.mime_type};base64,${inlineData.data}`;
+    contentParts.push({ type: "image_url", image_url: { url: dataUri } });
+  }
+
+  return { role, content: contentParts };
 }
 
 export async function POST(req) {
@@ -157,6 +203,9 @@ export async function POST(req) {
             return {
               role: msg.role === "user" ? "user" : "model",
               parts: parts,
+              // Preserve the raw imageUrl so buildOpenRouterMessage can read it
+              // without needing to re-decode inline_data back to a data URI.
+              imageUrl: msg.imageUrl || null,
             };
           });
 
@@ -175,7 +224,8 @@ export async function POST(req) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  contents: enhancedMessages,
+                  // Gemini only accepts role + parts — strip imageUrl and other extra fields.
+                  contents: enhancedMessages.map(({ role, parts }) => ({ role, parts })),
                 }),
               });
             };
@@ -216,10 +266,7 @@ export async function POST(req) {
                     body: JSON.stringify({
                       model: targetModel,
                       stream: true,
-                      messages: enhancedMessages.map((msg) => ({
-                        role: msg.role === "model" ? "assistant" : msg.role,
-                        content: msg.parts?.[0]?.text || "",
-                      })),
+                      messages: enhancedMessages.map((msg) => buildOpenRouterMessage(msg)),
                     }),
                   });
                 for (const m of orModels) {
@@ -434,10 +481,17 @@ export async function POST(req) {
               throw new Error("OPENROUTER_API_KEY is not set in environment variables");
             }
 
-            const openRouterModelsToTry = [
-              modelConfig.model,
-              ...OPENROUTER_FREE_FALLBACK_MODELS,
-            ].filter((m, i, arr) => arr.indexOf(m) === i);
+            // Detect whether any message in this turn carries an image
+            const hasImage = messages.some((m) => !!m.imageUrl);
+
+            // If the selected model doesn't support vision but user attached an image,
+            // prepend free vision models to the fallback list so the first capable
+            // model is tried instead.
+            const openRouterModelsToTry = (
+              hasImage && !modelConfig.supportsVision
+                ? [...OPENROUTER_VISION_FALLBACK_MODELS, modelConfig.model]
+                : [modelConfig.model, ...OPENROUTER_FREE_FALLBACK_MODELS]
+            ).filter((m, i, arr) => arr.indexOf(m) === i);
 
             const makeOpenRouterRequest = async (targetModel) =>
               fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -451,10 +505,7 @@ export async function POST(req) {
                 body: JSON.stringify({
                   model: targetModel,
                   stream: true,
-                  messages: enhancedMessages.map((msg) => ({
-                    role: msg.role === "model" ? "assistant" : msg.role,
-                    content: msg.parts?.[0]?.text || "",
-                  })),
+                  messages: enhancedMessages.map((msg) => buildOpenRouterMessage(msg)),
                 }),
               });
 

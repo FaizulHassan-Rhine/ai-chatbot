@@ -65,40 +65,40 @@ export default function ChatMessage({ message, isStreaming }) {
                 remarkPlugins={[remarkGfm]}
                 components={{
                   h1: ({ children }) => (
-                    <h1 className="text-xl font-bold mt-2 mb-3 text-foreground">{children}</h1>
+                    <h1 className={`text-xl font-bold mt-2 mb-3 ${isUser ? "text-primary-foreground" : "text-foreground"}`}>{children}</h1>
                   ),
                   h2: ({ children }) => (
-                    <h2 className="text-lg font-semibold mt-2 mb-2 text-foreground">{children}</h2>
+                    <h2 className={`text-lg font-semibold mt-2 mb-2 ${isUser ? "text-primary-foreground" : "text-foreground"}`}>{children}</h2>
                   ),
                   h3: ({ children }) => (
-                    <h3 className="text-base font-semibold mt-2 mb-2 text-foreground">{children}</h3>
+                    <h3 className={`text-base font-semibold mt-2 mb-2 ${isUser ? "text-primary-foreground" : "text-foreground"}`}>{children}</h3>
                   ),
                   p: ({ children }) => (
-                    <p className="mb-3 last:mb-0 text-foreground/95 break-words">{children}</p>
+                    <p className={`mb-3 last:mb-0 break-words ${isUser ? "text-primary-foreground" : "text-foreground/95"}`}>{children}</p>
                   ),
                   ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1">{children}</ul>,
                   ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1">{children}</ol>,
-                  li: ({ children }) => <li className="text-foreground/95 break-words">{children}</li>,
+                  li: ({ children }) => <li className={`break-words ${isUser ? "text-primary-foreground" : "text-foreground/95"}`}>{children}</li>,
                   strong: ({ children }) => (
-                    <strong className="font-semibold text-primary">{children}</strong>
+                    <strong className={`font-semibold ${isUser ? "text-primary-foreground" : "text-primary"}`}>{children}</strong>
                   ),
                   a: ({ href, children }) => (
                     <a
                       href={href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-500 break-all"
+                      className={`${isUser ? "text-white/95 hover:text-white" : "text-blue-600 dark:text-blue-400 hover:text-blue-500"} underline underline-offset-2 break-all`}
                     >
                       {children}
                     </a>
                   ),
                   code: ({ inline, children }) =>
                     inline ? (
-                      <code className="px-1.5 py-0.5 rounded bg-muted text-emerald-600 dark:text-emerald-400 text-[13px]">
+                      <code className={`px-1.5 py-0.5 rounded text-[13px] ${isUser ? "bg-black/20 text-white" : "bg-muted text-emerald-600 dark:text-emerald-400"}`}>
                         {children}
                       </code>
                     ) : (
-                      <code className="block p-3 rounded-lg bg-muted text-[13px] overflow-x-auto border">
+                      <code className={`block p-3 rounded-lg text-[13px] overflow-x-auto border ${isUser ? "bg-black/20 text-white border-white/20" : "bg-muted"}`}>
                         {children}
                       </code>
                     ),
@@ -110,11 +110,11 @@ export default function ChatMessage({ message, isStreaming }) {
                   thead: ({ children }) => <thead className="bg-muted/70">{children}</thead>,
                   tr: ({ children }) => <tr className="border-b border-border/70">{children}</tr>,
                   th: ({ children }) => (
-                    <th className="px-3 py-2 text-left font-semibold text-foreground">{children}</th>
+                    <th className={`px-3 py-2 text-left font-semibold ${isUser ? "text-primary-foreground" : "text-foreground"}`}>{children}</th>
                   ),
-                  td: ({ children }) => <td className="px-3 py-2 align-top text-foreground/95">{children}</td>,
+                  td: ({ children }) => <td className={`px-3 py-2 align-top ${isUser ? "text-primary-foreground" : "text-foreground/95"}`}>{children}</td>,
                   blockquote: ({ children }) => (
-                    <blockquote className="my-3 border-l-4 border-primary/50 pl-3 text-foreground/80 italic">
+                    <blockquote className={`my-3 border-l-4 pl-3 italic ${isUser ? "border-white/60 text-white/90" : "border-primary/50 text-foreground/80"}`}>
                       {children}
                     </blockquote>
                   ),

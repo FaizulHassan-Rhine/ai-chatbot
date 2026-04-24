@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { Send, Paperclip, Settings, Bot, Menu, X, Download, Globe, Moon, Sun } from "lucide-react";
+import { Send, Plus, Settings, Bot, Menu, X, Download, Globe, Moon, Sun, Mic, Sparkles } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import Sidebar from "@/components/Sidebar";
 import ChatMessage from "@/components/ChatMessage";
@@ -26,6 +26,9 @@ import {
 } from "@/lib/indexeddb";
 import { useTheme } from "@/components/ThemeProvider";
 import { SITE_NAME } from "@/lib/site";
+import { Eye } from "lucide-react";
+
+const DEFAULT_GREETING = `Hi! I'm ${SITE_NAME}. How can I help you today?`;
 
 export default function ChatPage() {
   const [chats, setChats] = useState([]);
@@ -51,7 +54,7 @@ export default function ChatPage() {
       loadChat(currentChatId);
     } else {
       setMessages([
-        { role: "assistant", content: `Hi! I'm ${SITE_NAME}. How can I help you today?` }
+        { role: "assistant", content: DEFAULT_GREETING }
       ]);
     }
   }, [currentChatId]);
@@ -124,7 +127,7 @@ export default function ChatPage() {
       if (currentChatId === chatId) {
         setCurrentChatId(null);
         setMessages([
-          { role: "assistant", content: `Hi! I'm ${SITE_NAME}. How can I help you today?` }
+          { role: "assistant", content: DEFAULT_GREETING }
         ]);
       }
     } catch (error) {
@@ -181,7 +184,15 @@ export default function ChatPage() {
       imageUrl: uploadedImage,
     };
 
-    const newMessages = [...messages, userMessage];
+    const baseMessages =
+      !currentChatId &&
+      messages.length === 1 &&
+      messages[0]?.role === "assistant" &&
+      messages[0]?.content === DEFAULT_GREETING
+        ? []
+        : messages;
+
+    const newMessages = [...baseMessages, userMessage];
     setMessages(newMessages);
     setInput("");
     setUploadedImage(null);
@@ -349,6 +360,12 @@ export default function ChatPage() {
         });
         const data = await res.json();
         setUploadedImage(data.url);
+
+        // Auto-switch to a vision-capable model if the current one doesn't support images.
+        setSelectedModel((prev) => {
+          if (AI_MODELS[prev]?.supportsVision) return prev;
+          return "openrouter-free-vision";
+        });
       } catch (error) {
         console.error("Error uploading file:", error);
       }
@@ -367,6 +384,26 @@ export default function ChatPage() {
     multiple: false,
     noClick: true,
   });
+
+  const DEFAULT_TEXT_MODEL_ID = "openrouter-gpt-oss-120b";
+  const modelList = Object.values(AI_MODELS);
+  const visionModels = modelList.filter((m) => m.supportsVision);
+  const recommendedTextModelIds = [
+    DEFAULT_TEXT_MODEL_ID,
+    "openrouter-gpt-oss-20b",
+    "openrouter-qwen-coder",
+  ];
+  const recommendedTextModels = recommendedTextModelIds
+    .map((id) => AI_MODELS[id])
+    .filter(Boolean);
+  const otherTextModels = modelList.filter(
+    (m) => !m.supportsVision && !recommendedTextModelIds.includes(m.id)
+  );
+  const hasUserMessage = messages.some((m) => m.role === "user");
+  const showMainPromptUi = !currentChatId && !hasUserMessage;
+  const hour = new Date().getHours();
+  const greetingText =
+    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -441,20 +478,57 @@ export default function ChatPage() {
                   <Button variant="outline" size="sm" className="gap-1.5 h-9 max-w-[min(100%,14rem)] sm:max-w-[16rem] px-2.5 sm:px-3 text-xs font-medium">
                     <Settings size={15} className="shrink-0 opacity-80" />
                     <span className="truncate">{AI_MODELS[selectedModel]?.name || "Model"}</span>
+                    {AI_MODELS[selectedModel]?.supportsVision && (
+                      <Eye size={12} className="shrink-0 text-primary/70" />
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-[min(100vw-2rem,18rem)]">
+                <DropdownMenuContent align="end" className="w-[min(100vw-2rem,20rem)]">
                   <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                    Model
+                    Recommended text models
                   </DropdownMenuLabel>
                   <Separator />
-                  {Object.values(AI_MODELS).map((model) => (
+                  {recommendedTextModels.map((model) => (
+                    <DropdownMenuItem
+                      key={model.id}
+                      onClick={() => setSelectedModel(model.id)}
+                      className={`flex items-center justify-between gap-2 ${selectedModel === model.id ? "bg-accent" : ""}`}
+                    >
+                      <span className="truncate">{model.name}</span>
+                      {model.id === DEFAULT_TEXT_MODEL_ID && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+                          Default
+                        </Badge>
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                    Vision models
+                  </DropdownMenuLabel>
+                  <Separator />
+                  {visionModels.map((model) => (
+                    <DropdownMenuItem
+                      key={model.id}
+                      onClick={() => setSelectedModel(model.id)}
+                      className={`flex items-center justify-between gap-2 ${selectedModel === model.id ? "bg-accent" : ""}`}
+                    >
+                      <span className="truncate">{model.name}</span>
+                      <span className="flex items-center gap-1 shrink-0 text-[10px] font-semibold text-primary/80 bg-primary/10 rounded px-1.5 py-0.5">
+                        <Eye size={10} />Vision
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground mt-1">
+                    Other text models
+                  </DropdownMenuLabel>
+                  <Separator />
+                  {otherTextModels.map((model) => (
                     <DropdownMenuItem
                       key={model.id}
                       onClick={() => setSelectedModel(model.id)}
                       className={selectedModel === model.id ? "bg-accent" : ""}
                     >
-                      {model.name}
+                      <span className="truncate">{model.name}</span>
                     </DropdownMenuItem>
                   ))}
                   <Separator />
@@ -486,111 +560,232 @@ export default function ChatPage() {
         </header>
 
         <ScrollArea className="flex-1 bg-muted/15">
-          <div className="max-w-3xl mx-auto px-3 py-6 md:px-8 md:py-8 space-y-1">
-            {messages.map((msg, i) => (
-              <ChatMessage key={i} message={msg} />
-            ))}
-
-            {streamingText && (
-              <ChatMessage
-                message={{ role: "assistant", content: streamingText }}
-                isStreaming={true}
-              />
-            )}
-
-            {loading && !streamingText && (
-              <div className="flex items-center gap-2 text-muted-foreground pl-12">
-                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
-                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.4s" }} />
+          {showMainPromptUi ? (
+            <div className="h-[calc(100vh-3.5rem)] w-full flex items-center justify-center px-4">
+              <div className="w-full max-w-2xl -mt-8">
+                <h2 className="text-center text-4xl md:text-5xl tracking-tight font-medium text-foreground mb-6">
+                  <Sparkles className="inline h-5 w-5 mr-2 text-primary/80" />
+                  {greetingText}
+                </h2>
+                <div
+                  {...getRootProps()}
+                  className={`rounded-3xl border border-border/80 bg-background shadow-sm transition-colors ${
+                    isDragActive ? "ring-2 ring-primary/30 border-primary/40 bg-primary/[0.03]" : ""
+                  }`}
+                >
+                  <input {...getInputProps()} />
+                  {uploadedImage && (
+                    <div className="px-3 pt-3">
+                      <div className="relative h-[110px] w-[110px] overflow-hidden rounded-2xl border border-border/70">
+                        {uploadedImage.startsWith("data:") ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={uploadedImage}
+                            alt="Preview"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Image
+                            src={uploadedImage}
+                            alt="Preview"
+                            width={110}
+                            height={110}
+                            className="h-full w-full object-cover"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUploadedImage(null);
+                          }}
+                          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm"
+                          aria-label="Remove image"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-end gap-1.5 p-2.5 md:p-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground rounded-full"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        open();
+                      }}
+                    >
+                      <Plus size={20} />
+                    </Button>
+                    <Textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          sendMessage();
+                        }
+                      }}
+                      placeholder="Type / for skills"
+                      className="min-h-[44px] max-h-[200px] resize-none border-0 focus-visible:ring-0 bg-transparent shadow-none text-sm placeholder:text-muted-foreground/70 py-2.5"
+                      rows={1}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Voice input coming soon"
+                    >
+                      <Mic size={17} />
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendMessage();
+                      }}
+                      disabled={loading || (!input.trim() && !uploadedImage)}
+                      size="icon"
+                      className="h-10 w-10 shrink-0 rounded-full"
+                    >
+                      <Send size={18} />
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 justify-center">
+                  {["Code", "Learn", "Write", "Life stuff"].map((label) => (
+                    <span key={label} className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground">
+                      {label}
+                    </span>
+                  ))}
+                </div>
               </div>
-            )}
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto px-3 py-6 md:px-8 md:py-8 space-y-1">
+              {messages.map((msg, i) => (
+                <ChatMessage key={i} message={msg} />
+              ))}
 
-            <div ref={messagesEndRef} />
-          </div>
-        </ScrollArea>
-
-        {uploadedImage && (
-          <Card className="mx-4 md:mx-6 mb-2 p-3 border-primary/20 bg-primary/5">
-            <div className="flex items-center gap-2">
-              {uploadedImage.startsWith("data:") ? (
-                <img
-                  src={uploadedImage}
-                  alt="Preview"
-                  className="w-16 h-16 object-cover rounded-lg"
-                />
-              ) : (
-                <Image
-                  src={uploadedImage}
-                  alt="Preview"
-                  width={64}
-                  height={64}
-                  className="w-16 h-16 object-cover rounded-lg"
+              {streamingText && (
+                <ChatMessage
+                  message={{ role: "assistant", content: streamingText }}
+                  isStreaming={true}
                 />
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setUploadedImage(null)}
-                className="text-destructive"
-              >
-                Remove
-              </Button>
+
+              {loading && !streamingText && (
+                <div className="flex items-center gap-2 text-muted-foreground pl-12">
+                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
+                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.4s" }} />
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
             </div>
-          </Card>
-        )}
+          )}
+        </ScrollArea>
 
-        <div className="shrink-0 border-t border-border/80 bg-card/80 backdrop-blur-sm px-3 py-3 md:px-5 md:py-4">
-          <div
-            {...getRootProps()}
-            className={`rounded-xl border border-border/80 bg-background shadow-sm transition-colors ${
-              isDragActive ? "ring-2 ring-primary/30 border-primary/40 bg-primary/[0.03]" : ""
-            }`}
-          >
-            <input {...getInputProps()} />
-            <div className="flex items-end gap-1.5 p-2 md:p-2.5">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  open();
-                }}
-              >
-                <Paperclip size={18} />
-              </Button>
-
-              <Textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
+        {!showMainPromptUi && (
+          <div className="shrink-0 border-t border-border/80 bg-card/80 backdrop-blur-sm px-3 py-3 md:px-5 md:py-4">
+            <div
+              {...getRootProps()}
+              className={`rounded-3xl border border-border/80 bg-background shadow-sm transition-colors ${
+                isDragActive ? "ring-2 ring-primary/30 border-primary/40 bg-primary/[0.03]" : ""
+              }`}
+            >
+              <input {...getInputProps()} />
+              {uploadedImage && (
+                <div className="px-3 pt-3">
+                  <div className="relative h-[110px] w-[110px] overflow-hidden rounded-2xl border border-border/70">
+                    {uploadedImage.startsWith("data:") ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={uploadedImage}
+                        alt="Preview"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Image
+                        src={uploadedImage}
+                        alt="Preview"
+                        width={110}
+                        height={110}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUploadedImage(null);
+                      }}
+                      className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm"
+                      aria-label="Remove image"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-end gap-1.5 p-2.5 md:p-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground rounded-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    open();
+                  }}
+                >
+                  <Plus size={20} />
+                </Button>
+                <Textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder="Message…"
+                  className="min-h-[44px] max-h-[200px] resize-none border-0 focus-visible:ring-0 bg-transparent shadow-none text-sm placeholder:text-muted-foreground/70 py-2.5"
+                  rows={1}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Voice input coming soon"
+                >
+                  <Mic size={17} />
+                </Button>
+                <Button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     sendMessage();
-                  }
-                }}
-                placeholder="Message…"
-                className="min-h-[44px] max-h-[200px] resize-none border-0 focus-visible:ring-0 bg-transparent shadow-none text-sm placeholder:text-muted-foreground/70 py-2.5"
-                rows={1}
-              />
-
-              <Button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  sendMessage();
-                }}
-                disabled={loading || (!input.trim() && !uploadedImage)}
-                size="icon"
-                className="h-10 w-10 shrink-0 rounded-lg"
-              >
-                <Send size={18} />
-              </Button>
+                  }}
+                  disabled={loading || (!input.trim() && !uploadedImage)}
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full"
+                >
+                  <Send size={18} />
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
